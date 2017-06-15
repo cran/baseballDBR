@@ -1,0 +1,95 @@
+---
+title: "Weighted On-base Average (wOBA)"
+author: "Kris Eberwein"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Weighted On-base Average (wOBA)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The `baseballDBR` package provides several variations of the wOBA calculation. There are two primary functions that provide the data and calculations. The `wOBA()` function provides the final calculation, while the `WOBA_values()` function provides the season average data that drive the higher level calculation.
+
+## Quick Start
+
+```{r, eval=FALSE}
+library(baseballDBR)
+# Load data from Baseball Databank
+get_bbdb(table = c("Batting", "Pitching", "Fielding"))
+
+Batting <- wOBA(Batting, Pitching, Fielding, Fangraphs = T)
+head(Batting, 3)
+```
+
+
+## Understanding wOBA
+
+Weighted on-base average was a statistic first used by sabermatrican Tom Tango and published in [The Book](http://www.insidethebook.com/). The wOBA metric has been show to strongly correlate to the number of runs scored. The basic formula is:
+
+$$\frac{wBB*BB + wHBP*HBP + wX1B*X1B + wX2B*X2B + wX3B*X3B + wHR*HR}{(AB+BB-IBB+SF+SH+HBP)=PA}$$
+
+The basic formula is simple enough, but first we must find the `w` values, or weighted values. Calculating the weighted values is not as straight forward and is done by applying a system of linear weights to yearly league averages in order to create a "run scoring environment" for the year. The `baseballDBR` package uses [Tom Tango's formula](http://www.insidethebook.com/ee/index.php/site/article/woba_year_by_year_calculations/) to calculate weighted values. Tango's `SQL` has been ported to `R` for our use. The wOBA functions also offer a "Fangraphs" argument, which uses the weights provided by [Fangraphs](http://www.fangraphs.com/guts.aspx?type=cn). The Fangraphs algorithm and Tango algorithm produce similar woba values, but can be slightly different.
+
+### Fangraphs wOBA vs Tango wOBA
+
+As we discussed above, the modifiers that Fangraphs produces are slightly different than the modifiers that the Tango algorithm produces, therefore the two produce slightly different wOBA values. The wOBA values are normally within one one-thousandth of one percent.
+
+**Why are they different?**
+
+The data from the Baseball Databank does not specify a player's position. Therefore, "fuzzy logic" is used to determine a player's primary position. This may cause instances where a player's statistics are weighted according to a position other than their primary position.
+
+```{r, eval=FALSE}
+library(baseballDBR)
+library(dplyr)
+get_bbdb(table = c("Batting", "Pitching", "Fielding"))
+
+Batting$f_wOBA <- wOBA(Batting, Pitching, Fielding, Fangraphs = T)
+    
+Batting$t_wOBA <- wOBA(Batting, Pitching, Fielding, Fangraphs = F)
+
+# Going to subset for players who had more than 100 at-bats and played in at least eighty games.
+# This shoul eliminate most of the pitchers and minor league call-ups.
+Batting_2016 <- subset(Batting, yearID >= 2016 & AB >= 100 & G >= 80) %>%
+    arrange(desc(t_wOBA))
+
+head(Batting_2016)
+
+```
+
+### Arguments
+
+The `wOBA()` and `wOBA_values()` functions require three data frames:
+
+* Fangraphs: Should the function use Fangraphs wOBA values or the package's native Tango method?
+
+* NA_to_zero: Should the function apply `0` to statistics that may not have been counted? For example, Babe Ruth's sacrifice fly `SF` metric is NA because that statistic wasn't tracked when he played, so his `wOBA` should be NA. Note, that it is a statistically unsound practice to set NAs to zero. However, the authors of this package recognize the desire to compare past players to current players.
+
+* Sep.Leagues: Should the function determine separate wOBA values for the National and American leagues. Standard practice would be to use wOBA values that combine both leagues. Note, this function is not possible if `Fangraphs=TRUE`.
+
+Even though wOBA is a batting metric, the Pitching and Fielding tables are used to determine a player's primary position. The tables should be full tables of entire years, and not a subset, because the wOBA calculation depends on yearly league average values.
+
+### The wOBA_values Function
+
+The higher-level `wOBA()` function relies on `wOBA_values()`. It is not necessary to call the `wOBA_values()` function to use the `wOBA()` function, but it this function has been exported to the package to give users the opportunity for deeper analysis. Arguments include:
+
+* Sep.Leagues - If `TRUE`, this will calculate separate wOBA vales for the American and National leagues. The default setting is `FALSE` because league separation is not typically performed in wOBA calculations. The advantage to separating the leagues is, the resulting wOBA values will naturally account for the DH and batting pitchers.
+
+* Fangraphs - If `TRUE` the function will use wOBA values provided by Fangraphs. The default is to use a ported version of Tom Tango's algorithm as applied to the Baseball Databank. The two algorithms produce similar, but slightly different results. The advantage to using the Tango algorithm is, it can be used in conjunction with `Sep.Leagues=TRUE`, whereas the Fangraphs data only provide for the combined leagues.
+
+```{r, eval=FALSE}
+library(baseballDBR)
+# Load data from Baseball Databank
+get_bbdb(table = c("Batting", "Pitching", "Fielding"))
+
+# Run wOBA values for seperate leagues
+w_vals <- wOBA_values(BattingTable = Batting, FieldingTable = Fielding, PitchingTable = Pitching, Sep.Leagues = TRUE)
+
+```
+
+If we look at the data, we notice that the years 1871 to 1875 produce several NAs. This is due to incomplete or untracked data during that time period. We also notice there was only one league in existence during those years. Otherwise, the data are complete. The "league wOBA" for the two leagues is often close, but varies depending on the quality of play across various years.
+
+```{r, eval=FALSE}
+head(w_vals)
+```
+
